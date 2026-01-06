@@ -19,12 +19,37 @@ export interface DadosAdicionais {
     percentual: number; // Ex: 0.01 = 1% por ano
     anosAplicaveis: number;
   };
+  gratificacao?: number; // Valor de gratificações
   comissao?: number;
   horaExtra?: {
-    valor: number;
-    percentualAdicional: number; // 0.50 ou 1.00
+    horasContratoMensal: number; // 220 ou 110
+    quantidadeHe50: number; // Quantidade de horas extras 50%
+    quantidadeHe100: number; // Quantidade de horas extras 100%
   };
   dsrSobreVariaveis?: number; // Valor do DSR sobre comissão+HE (calculado automaticamente ou manual)
+}
+
+export interface BaseHoraExtraDetalhada {
+  salarioBase: number;
+  ats: number;
+  comissao: number;
+  insalubridade: number;
+  gratificacao: number;
+  periculosidade: number;
+  total: number;
+  divisor: number;
+  valorHora: number;
+  he50: {
+    quantidade: number;
+    fator: number;
+    valor: number;
+  };
+  he100: {
+    quantidade: number;
+    fator: number;
+    valor: number;
+  };
+  totalHoraExtra: number;
 }
 
 export interface DadosRescisao {
@@ -96,6 +121,8 @@ export interface ResultadoRescisao {
   // Avos utilizados
   avosFeriasUtilizado: number;
   avos13Utilizado: number;
+  // Base de hora extra detalhada (para demonstrativo)
+  baseHoraExtra?: BaseHoraExtraDetalhada;
 }
 
 function calcularDiferencaMeses(dataInicio: Date, dataFim: Date): number {
@@ -303,11 +330,73 @@ export function calcularRescisao(dados: DadosRescisao): ResultadoRescisao {
     }
     
     // === CORREÇÃO 6: DSR único sobre Comissão + HE ===
-    if ((adicionais.comissao && adicionais.comissao > 0) || 
-        (adicionais.horaExtra && adicionais.horaExtra.valor > 0)) {
-      const comissaoValor = adicionais.comissao || 0;
-      const heValor = adicionais.horaExtra?.valor || 0;
+    // === CORREÇÃO: Calcular Hora Extra com base correta ===
+    
+    const comissaoValor = adicionais.comissao || 0;
+    let heValor = 0;
+    let baseHoraExtraDetalhada: BaseHoraExtraDetalhada | undefined;
+    
+    // Calcular hora extra com base composta
+    if (adicionais.horaExtra && (adicionais.horaExtra.quantidadeHe50 > 0 || adicionais.horaExtra.quantidadeHe100 > 0)) {
+      // Componentes da base de hora extra
+      const valorATS = adicionais.ats 
+        ? dados.salarioBase * adicionais.ats.percentual * adicionais.ats.anosAplicaveis 
+        : 0;
       
+      const valorInsalubridade = adicionais.insalubridade
+        ? adicionais.insalubridade.base * ({ minimo: 0.10, medio: 0.20, maximo: 0.40 }[adicionais.insalubridade.grau])
+        : 0;
+      
+      const valorPericulosidade = adicionais.periculosidade
+        ? dados.salarioBase * adicionais.periculosidade
+        : 0;
+      
+      const valorGratificacao = adicionais.gratificacao || 0;
+      
+      // Base hora extra = salário + ATS + comissões + insalubridade + gratificações + periculosidade
+      const baseHoraExtra = dados.salarioBase + valorATS + comissaoValor + valorInsalubridade + valorGratificacao + valorPericulosidade;
+      
+      const divisor = adicionais.horaExtra.horasContratoMensal || 220;
+      const valorHora = baseHoraExtra / divisor;
+      
+      const he50 = valorHora * 1.5 * adicionais.horaExtra.quantidadeHe50;
+      const he100 = valorHora * 2.0 * adicionais.horaExtra.quantidadeHe100;
+      heValor = he50 + he100;
+      
+      baseHoraExtraDetalhada = {
+        salarioBase: dados.salarioBase,
+        ats: valorATS,
+        comissao: comissaoValor,
+        insalubridade: valorInsalubridade,
+        gratificacao: valorGratificacao,
+        periculosidade: valorPericulosidade,
+        total: baseHoraExtra,
+        divisor,
+        valorHora,
+        he50: {
+          quantidade: adicionais.horaExtra.quantidadeHe50,
+          fator: 1.5,
+          valor: he50,
+        },
+        he100: {
+          quantidade: adicionais.horaExtra.quantidadeHe100,
+          fator: 2.0,
+          valor: he100,
+        },
+        totalHoraExtra: heValor,
+      };
+      
+      addLog('INFO', `Base Hora Extra: R$ ${baseHoraExtra.toFixed(2)} (Sal. Base: ${dados.salarioBase.toFixed(2)} + ATS: ${valorATS.toFixed(2)} + Comissão: ${comissaoValor.toFixed(2)} + Insalub.: ${valorInsalubridade.toFixed(2)} + Gratif.: ${valorGratificacao.toFixed(2)} + Pericul.: ${valorPericulosidade.toFixed(2)})`);
+      addLog('INFO', `Valor Hora: R$ ${baseHoraExtra.toFixed(2)} ÷ ${divisor}h = R$ ${valorHora.toFixed(2)}`);
+      if (adicionais.horaExtra.quantidadeHe50 > 0) {
+        addLog('INFO', `HE 50%: R$ ${valorHora.toFixed(2)} × 1,5 × ${adicionais.horaExtra.quantidadeHe50}h = R$ ${he50.toFixed(2)}`);
+      }
+      if (adicionais.horaExtra.quantidadeHe100 > 0) {
+        addLog('INFO', `HE 100%: R$ ${valorHora.toFixed(2)} × 2,0 × ${adicionais.horaExtra.quantidadeHe100}h = R$ ${he100.toFixed(2)}`);
+      }
+    }
+    
+    if ((comissaoValor > 0) || (heValor > 0)) {
       if (comissaoValor > 0) {
         verbas.push({
           rubrica: 'COMISSAO',
@@ -321,11 +410,16 @@ export function calcularRescisao(dados: DadosRescisao): ResultadoRescisao {
         });
       }
       
-      if (heValor > 0) {
-        const adicionalHE = adicionais.horaExtra?.percentualAdicional || 0.50;
+      if (heValor > 0 && baseHoraExtraDetalhada) {
+        let heDescricao = 'Hora Extra';
+        const partes: string[] = [];
+        if (baseHoraExtraDetalhada.he50.quantidade > 0) partes.push(`${baseHoraExtraDetalhada.he50.quantidade}h 50%`);
+        if (baseHoraExtraDetalhada.he100.quantidade > 0) partes.push(`${baseHoraExtraDetalhada.he100.quantidade}h 100%`);
+        if (partes.length > 0) heDescricao += ` (${partes.join(' + ')})`;
+        
         verbas.push({
           rubrica: 'HORA_EXTRA',
-          descricao: `Hora Extra (${(adicionalHE * 100).toFixed(0)}%)`,
+          descricao: heDescricao,
           valor: heValor,
           tipo: 'provento',
           incideInss: true,
@@ -349,6 +443,22 @@ export function calcularRescisao(dados: DadosRescisao): ResultadoRescisao {
         });
         addLog('INFO', `DSR calculado sobre soma de variáveis (Comissão + HE): R$ ${dados.adicionais.dsrSobreVariaveis.toFixed(2)}`);
       }
+    }
+    
+    // Gratificação (se não usada na base de HE, ainda aparece como verba)
+    if (adicionais.gratificacao && adicionais.gratificacao > 0 && 
+        !(adicionais.horaExtra && (adicionais.horaExtra.quantidadeHe50 > 0 || adicionais.horaExtra.quantidadeHe100 > 0))) {
+      // Se não há HE, a gratificação aparece como verba separada
+      verbas.push({
+        rubrica: 'GRATIFICACAO',
+        descricao: 'Gratificações',
+        valor: adicionais.gratificacao,
+        tipo: 'provento',
+        incideInss: true,
+        incideIrrf: true,
+        incideFgts: true,
+        grupoIrrf: 'MENSAL',
+      });
     }
   }
   
@@ -653,6 +763,51 @@ export function calcularRescisao(dados: DadosRescisao): ResultadoRescisao {
 
   const liquido = totalProventos + multaFgts - totalDescontos - inss - irrf;
 
+  // Buscar baseHoraExtraDetalhada dos adicionais (se foi calculada)
+  let baseHoraExtraResult: BaseHoraExtraDetalhada | undefined;
+  if (dados.adicionais?.horaExtra && (dados.adicionais.horaExtra.quantidadeHe50 > 0 || dados.adicionais.horaExtra.quantidadeHe100 > 0)) {
+    const adicionais = dados.adicionais;
+    const valorATS = adicionais.ats 
+      ? dados.salarioBase * adicionais.ats.percentual * adicionais.ats.anosAplicaveis 
+      : 0;
+    const valorInsalubridade = adicionais.insalubridade
+      ? adicionais.insalubridade.base * ({ minimo: 0.10, medio: 0.20, maximo: 0.40 }[adicionais.insalubridade.grau])
+      : 0;
+    const valorPericulosidade = adicionais.periculosidade
+      ? dados.salarioBase * adicionais.periculosidade
+      : 0;
+    const valorGratificacao = adicionais.gratificacao || 0;
+    const comissaoValor = adicionais.comissao || 0;
+    const baseHoraExtra = dados.salarioBase + valorATS + comissaoValor + valorInsalubridade + valorGratificacao + valorPericulosidade;
+    const divisor = adicionais.horaExtra.horasContratoMensal || 220;
+    const valorHora = baseHoraExtra / divisor;
+    const he50 = valorHora * 1.5 * adicionais.horaExtra.quantidadeHe50;
+    const he100 = valorHora * 2.0 * adicionais.horaExtra.quantidadeHe100;
+    
+    baseHoraExtraResult = {
+      salarioBase: dados.salarioBase,
+      ats: valorATS,
+      comissao: comissaoValor,
+      insalubridade: valorInsalubridade,
+      gratificacao: valorGratificacao,
+      periculosidade: valorPericulosidade,
+      total: baseHoraExtra,
+      divisor,
+      valorHora,
+      he50: {
+        quantidade: adicionais.horaExtra.quantidadeHe50,
+        fator: 1.5,
+        valor: he50,
+      },
+      he100: {
+        quantidade: adicionais.horaExtra.quantidadeHe100,
+        fator: 2.0,
+        valor: he100,
+      },
+      totalHoraExtra: he50 + he100,
+    };
+  }
+
   return {
     verbas,
     totalProventos: totalProventos + multaFgts,
@@ -671,5 +826,6 @@ export function calcularRescisao(dados: DadosRescisao): ResultadoRescisao {
     logs,
     avosFeriasUtilizado,
     avos13Utilizado,
+    baseHoraExtra: baseHoraExtraResult,
   };
 }

@@ -58,8 +58,10 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
   const [atsPercentual, setAtsPercentual] = useState<string>('');
   const [atsAnos, setAtsAnos] = useState<string>('');
   const [comissao, setComissao] = useState<string>('');
-  const [horaExtraValor, setHoraExtraValor] = useState<string>('');
-  const [horaExtraPercentual, setHoraExtraPercentual] = useState<string>('50');
+  const [gratificacao, setGratificacao] = useState<string>('');
+  const [horasContratoMensal, setHorasContratoMensal] = useState<string>('220');
+  const [quantidadeHe50, setQuantidadeHe50] = useState<string>('');
+  const [quantidadeHe100, setQuantidadeHe100] = useState<string>('');
   const [dsrVariaveis, setDsrVariaveis] = useState<string>('');
 
   const selectedMotivo = rescisaoConfig.motivos.find(m => m.codigo === motivoCodigo);
@@ -170,10 +172,12 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
           percentual: parseFloat(atsPercentual.replace(',', '.')) / 100 || 0,
           anosAplicaveis: parseInt(atsAnos) || 0,
         } : undefined,
+        gratificacao: parseCurrency(gratificacao) || undefined,
         comissao: parseCurrency(comissao) || undefined,
-        horaExtra: horaExtraValor ? {
-          valor: parseCurrency(horaExtraValor),
-          percentualAdicional: parseFloat(horaExtraPercentual) / 100 || 0.5,
+        horaExtra: (quantidadeHe50 || quantidadeHe100) ? {
+          horasContratoMensal: parseInt(horasContratoMensal) || 220,
+          quantidadeHe50: parseFloat(quantidadeHe50.replace(',', '.')) || 0,
+          quantidadeHe100: parseFloat(quantidadeHe100.replace(',', '.')) || 0,
         } : undefined,
         dsrSobreVariaveis: parseCurrency(dsrVariaveis) || undefined,
       },
@@ -741,11 +745,25 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
                 </div>
               </div>
 
+              {/* Gratificação */}
+              <div className="space-y-2">
+                <Label className="text-sm">Gratificações</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
+                  <Input
+                    value={gratificacao}
+                    onChange={handleCurrencyChange(setGratificacao)}
+                    className="pl-10 font-mono"
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+
               {/* Comissão e Hora Extra com DSR único */}
               <div className="border rounded-lg p-4 space-y-3">
                 <h5 className="text-sm font-medium">Comissão, Hora Extra e DSR</h5>
                 <p className="text-xs text-muted-foreground">
-                  O DSR será calculado sobre a soma de Comissão + Hora Extra (base única)
+                  Base HE = Salário + ATS + Comissão + Insalubridade + Gratificação + Periculosidade
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -761,42 +779,53 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs">Hora Extra (valor total)</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
-                      <Input
-                        value={horaExtraValor}
-                        onChange={handleCurrencyChange(setHoraExtraValor)}
-                        className="pl-8 font-mono"
-                        placeholder="0,00"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Adicional HE (%)</Label>
-                    <Select value={horaExtraPercentual} onValueChange={setHoraExtraPercentual}>
+                    <Label className="text-xs">Jornada Mensal (horas)</Label>
+                    <Select value={horasContratoMensal} onValueChange={setHorasContratoMensal}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="50">50%</SelectItem>
-                        <SelectItem value="100">100%</SelectItem>
+                        <SelectItem value="220">220h (8h/dia)</SelectItem>
+                        <SelectItem value="110">110h (4h/dia)</SelectItem>
+                        <SelectItem value="180">180h (6h/dia)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-xs">DSR sobre Variáveis</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
-                      <Input
-                        value={dsrVariaveis}
-                        onChange={handleCurrencyChange(setDsrVariaveis)}
-                        className="pl-8 font-mono"
-                        placeholder="0,00"
-                      />
-                    </div>
+                    <Label className="text-xs">Qtd. Horas Extras 50%</Label>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={quantidadeHe50}
+                      onChange={(e) => setQuantidadeHe50(e.target.value)}
+                      className="font-mono"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Qtd. Horas Extras 100%</Label>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={quantidadeHe100}
+                      onChange={(e) => setQuantidadeHe100(e.target.value)}
+                      className="font-mono"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">DSR sobre Variáveis</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
+                    <Input
+                      value={dsrVariaveis}
+                      onChange={handleCurrencyChange(setDsrVariaveis)}
+                      className="pl-8 font-mono"
+                      placeholder="0,00"
+                    />
                   </div>
                 </div>
               </div>

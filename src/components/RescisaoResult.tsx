@@ -1,8 +1,9 @@
-import { ArrowDownCircle, ArrowUpCircle, FileText, TrendingUp, Wallet, ClipboardList, AlertCircle } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, FileText, TrendingUp, Wallet, ClipboardList, AlertCircle, Calculator } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ResultadoRescisao, ResultadoVerba } from '@/lib/rescisao-calculator';
 
 interface RescisaoResultProps {
@@ -265,6 +266,120 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Demonstrativo Base Hora Extra */}
+      {resultado.baseHoraExtra && (
+        <Card className="card-elevated">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Calculator className="h-4 w-4" />
+              Demonstrativo Base Hora Extra
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {/* Composição da base */}
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">Composição da Base</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Componente</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Salário Base</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.salarioBase)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>ATS</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.ats)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Comissões</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.comissao)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Insalubridade</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.insalubridade)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Gratificações</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.gratificacao)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Periculosidade</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.periculosidade)}</TableCell>
+                    </TableRow>
+                    <TableRow className="font-semibold bg-muted/50">
+                      <TableCell>Base Hora Extra (Total)</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.total)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+              
+              {/* Cálculo do valor hora */}
+              <div className="p-3 bg-muted/30 rounded-lg">
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Valor Hora = </span>
+                  <span className="font-mono">{formatCurrency(resultado.baseHoraExtra.total)}</span>
+                  <span className="text-muted-foreground"> ÷ </span>
+                  <span className="font-mono">{resultado.baseHoraExtra.divisor}h</span>
+                  <span className="text-muted-foreground"> = </span>
+                  <span className="font-mono font-semibold">{formatCurrency(resultado.baseHoraExtra.valorHora)}</span>
+                </p>
+              </div>
+              
+              {/* Cálculo das horas extras */}
+              <div>
+                <h4 className="text-sm font-medium text-muted-foreground mb-2">Cálculo das Horas Extras</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead className="text-center">Qtd.</TableHead>
+                      <TableHead className="text-center">Fator</TableHead>
+                      <TableHead>Fórmula</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {resultado.baseHoraExtra.he50.quantidade > 0 && (
+                      <TableRow>
+                        <TableCell>HE 50%</TableCell>
+                        <TableCell className="text-center font-mono">{resultado.baseHoraExtra.he50.quantidade}h</TableCell>
+                        <TableCell className="text-center font-mono">× 1,5</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatCurrency(resultado.baseHoraExtra.valorHora)} × 1,5 × {resultado.baseHoraExtra.he50.quantidade}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.he50.valor)}</TableCell>
+                      </TableRow>
+                    )}
+                    {resultado.baseHoraExtra.he100.quantidade > 0 && (
+                      <TableRow>
+                        <TableCell>HE 100%</TableCell>
+                        <TableCell className="text-center font-mono">{resultado.baseHoraExtra.he100.quantidade}h</TableCell>
+                        <TableCell className="text-center font-mono">× 2,0</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatCurrency(resultado.baseHoraExtra.valorHora)} × 2,0 × {resultado.baseHoraExtra.he100.quantidade}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.he100.valor)}</TableCell>
+                      </TableRow>
+                    )}
+                    <TableRow className="font-semibold bg-muted/50">
+                      <TableCell colSpan={4}>Total Horas Extras</TableCell>
+                      <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.totalHoraExtra)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Informações adicionais */}
       {resultado.multaFgts > 0 && (
