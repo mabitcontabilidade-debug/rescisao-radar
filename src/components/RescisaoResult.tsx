@@ -1,4 +1,4 @@
-import { ArrowDownCircle, ArrowUpCircle, FileText, TrendingUp, Wallet, ClipboardList, AlertCircle, Calculator } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, FileText, TrendingUp, Wallet, ClipboardList, AlertCircle, Calculator, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -138,17 +138,21 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
         </Card>
       </div>
 
-      {/* Avos utilizados */}
+      {/* Avos e dias de aviso utilizados */}
       <Card className="card-elevated">
         <CardContent className="pt-4">
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Avos Férias:</span>
               <span className="font-mono font-medium">{resultado.avosFeriasUtilizado}/12</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Avos 13º:</span>
               <span className="font-mono font-medium">{resultado.avos13Utilizado}/12</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Dias de Aviso:</span>
+              <span className="font-mono font-medium">{resultado.diasAvisoUtilizado} dias</span>
             </div>
           </div>
         </CardContent>
@@ -209,7 +213,7 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
                     <ArrowDownCircle className="h-5 w-5 text-desconto" />
                     <div>
                       <p className="font-medium text-foreground">INSS 13º</p>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Grupo 13º</Badge>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Grupo 13º (base única)</Badge>
                     </div>
                   </div>
                   <span className="font-mono text-base font-semibold text-desconto">
@@ -239,7 +243,7 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
                     <ArrowDownCircle className="h-5 w-5 text-desconto" />
                     <div>
                       <p className="font-medium text-foreground">IRRF 13º</p>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Grupo 13º</Badge>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Grupo 13º (base única)</Badge>
                     </div>
                   </div>
                   <span className="font-mono text-base font-semibold text-desconto">
@@ -369,6 +373,28 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
                         <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.he100.valor)}</TableCell>
                       </TableRow>
                     )}
+                    {resultado.baseHoraExtra.intrajornada && (
+                      <TableRow>
+                        <TableCell>Intrajornada</TableCell>
+                        <TableCell className="text-center font-mono">{resultado.baseHoraExtra.intrajornada.horas}h</TableCell>
+                        <TableCell className="text-center font-mono">× {resultado.baseHoraExtra.intrajornada.fator.toFixed(1)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatCurrency(resultado.baseHoraExtra.valorHora)} × {resultado.baseHoraExtra.intrajornada.fator.toFixed(1)} × {resultado.baseHoraExtra.intrajornada.horas}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.intrajornada.valor)}</TableCell>
+                      </TableRow>
+                    )}
+                    {resultado.baseHoraExtra.interjornada && (
+                      <TableRow>
+                        <TableCell>Interjornada</TableCell>
+                        <TableCell className="text-center font-mono">{resultado.baseHoraExtra.interjornada.horas}h</TableCell>
+                        <TableCell className="text-center font-mono">× {resultado.baseHoraExtra.interjornada.fator.toFixed(1)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {formatCurrency(resultado.baseHoraExtra.valorHora)} × {resultado.baseHoraExtra.interjornada.fator.toFixed(1)} × {resultado.baseHoraExtra.interjornada.horas}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.interjornada.valor)}</TableCell>
+                      </TableRow>
+                    )}
                     <TableRow className="font-semibold bg-muted/50">
                       <TableCell colSpan={4}>Total Horas Extras</TableCell>
                       <TableCell className="text-right font-mono">{formatCurrency(resultado.baseHoraExtra.totalHoraExtra)}</TableCell>
@@ -376,6 +402,30 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
                   </TableBody>
                 </Table>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* DSR Configuração */}
+      {resultado.dsrConfig && resultado.dsrConfig.valorDsr > 0 && (
+        <Card className="card-elevated">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Clock className="h-4 w-4" />
+              DSR sobre Variáveis
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="p-3 bg-muted/30 rounded-lg">
+              <p className="text-sm">
+                <span className="text-muted-foreground">Fórmula: (Variáveis ÷ </span>
+                <span className="font-mono">{resultado.dsrConfig.diasUteis}</span>
+                <span className="text-muted-foreground"> dias úteis) × </span>
+                <span className="font-mono">{resultado.dsrConfig.diasNaoUteis}</span>
+                <span className="text-muted-foreground"> dias não úteis = </span>
+                <span className="font-mono font-semibold">{formatCurrency(resultado.dsrConfig.valorDsr)}</span>
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -411,7 +461,7 @@ export function RescisaoResult({ resultado }: RescisaoResultProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-32">
+            <ScrollArea className="h-48">
               <div className="space-y-1 text-xs font-mono">
                 {resultado.logs.map((log, i) => (
                   <div key={i} className="flex gap-2">
