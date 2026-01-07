@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { useState, useMemo, useEffect } from 'react';
+import { format, parse, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { CalendarIcon, Calculator, Info, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { CalendarIcon, Calculator, Info, AlertTriangle, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { rescisaoConfig } from '@/lib/rescisao-config';
 import { DadosRescisao } from '@/lib/rescisao-calculator';
 
@@ -24,7 +26,9 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
   // Dados básicos
   const [salarioBase, setSalarioBase] = useState<string>('');
   const [dataAdmissao, setDataAdmissao] = useState<Date>();
+  const [dataAdmissaoText, setDataAdmissaoText] = useState<string>('');
   const [dataDesligamento, setDataDesligamento] = useState<Date>();
+  const [dataDesligamentoText, setDataDesligamentoText] = useState<string>('');
   const [motivoCodigo, setMotivoCodigo] = useState<string>('');
   const [tipoContrato, setTipoContrato] = useState<string>('INDETERMINADO');
   const [tipoAviso, setTipoAviso] = useState<string>('INDENIZADO');
@@ -45,14 +49,18 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
   const [avos13Editado, setAvos13Editado] = useState<string>('');
   const [avos13Justificativa, setAvos13Justificativa] = useState<string>('');
   
+  // Dias de aviso editável
+  const [diasAvisoEditado, setDiasAvisoEditado] = useState<string>('');
+  const [diasAvisoJustificativa, setDiasAvisoJustificativa] = useState<string>('');
+  
   // Adicionais (seção colapsável)
   const [adicionaisOpen, setAdicionaisOpen] = useState(false);
   const [horasNoturnas, setHorasNoturnas] = useState<string>('');
-  const [valorHoraNoturna, setValorHoraNoturna] = useState<string>('');
+  const [percentualNoturno, setPercentualNoturno] = useState<string>('20');
   const [periculosidade, setPericulosidade] = useState<string>('');
   const [insalubridadeGrau, setInsalubridadeGrau] = useState<string>('');
   const [insalubridadeBase, setInsalubridadeBase] = useState<string>('');
-  const [quebraCaixa, setQuebraCaixa] = useState<string>('');
+  const [quebraCaixaPercentual, setQuebraCaixaPercentual] = useState<string>('');
   const [vrValorDia, setVrValorDia] = useState<string>('');
   const [vrDiasUteis, setVrDiasUteis] = useState<string>('');
   const [atsPercentual, setAtsPercentual] = useState<string>('');
@@ -62,12 +70,29 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
   const [horasContratoMensal, setHorasContratoMensal] = useState<string>('220');
   const [quantidadeHe50, setQuantidadeHe50] = useState<string>('');
   const [quantidadeHe100, setQuantidadeHe100] = useState<string>('');
-  const [dsrVariaveis, setDsrVariaveis] = useState<string>('');
+  
+  // Intrajornada e Interjornada
+  const [intrajornadaHoras, setIntrajornadaHoras] = useState<string>('');
+  const [intrajornadaFator, setIntrajornadaFator] = useState<string>('1.5');
+  const [interjornadaHoras, setInterjornadaHoras] = useState<string>('');
+  const [interjornadaFator, setInterjornadaFator] = useState<string>('1.5');
+  
+  // DSR Configurável
+  const [dsrDialogOpen, setDsrDialogOpen] = useState(false);
+  const [dsrDiasUteis, setDsrDiasUteis] = useState<string>('22');
+  const [dsrDiasNaoUteis, setDsrDiasNaoUteis] = useState<string>('5');
 
   const selectedMotivo = rescisaoConfig.motivos.find(m => m.codigo === motivoCodigo);
   const showAvisoOptions = selectedMotivo && 
     ['SEM_JUSTA_CAUSA_EQUIVALENTE', 'ACORDO_484A'].includes(selectedMotivo.categoriaBase);
   const showDescontoAviso = selectedMotivo?.categoriaBase === 'PEDIDO_DEMISSAO';
+
+  // Auto-preencher dias trabalhados quando data de desligamento mudar
+  useEffect(() => {
+    if (dataDesligamento) {
+      setDiasTrabalhados(dataDesligamento.getDate().toString());
+    }
+  }, [dataDesligamento]);
 
   // Cálculo automático dos avos
   const avosCalculados = useMemo(() => {
@@ -88,6 +113,79 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
     
     return { ferias: mesesFerias, decimoTerceiro: meses13 };
   }, [dataAdmissao, dataDesligamento]);
+
+  // Cálculo automático dos dias de aviso
+  const diasAvisoCalculado = useMemo(() => {
+    if (!dataAdmissao || !dataDesligamento) return 30;
+    const diasVinculo = Math.floor((dataDesligamento.getTime() - dataAdmissao.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const anosCompletos = Math.floor(diasVinculo / 365);
+    return Math.min(30 + Math.max(0, anosCompletos - 1) * 3, 90);
+  }, [dataAdmissao, dataDesligamento]);
+
+  // Cálculo automático da quebra de caixa
+  const quebraCaixaValor = useMemo(() => {
+    const salario = parseCurrency(salarioBase);
+    const percentual = parseFloat(quebraCaixaPercentual) / 100 || 0;
+    return salario * percentual;
+  }, [salarioBase, quebraCaixaPercentual]);
+
+  // Cálculo automático do valor hora para adicional noturno, intrajornada, interjornada
+  const valorHoraCalculado = useMemo(() => {
+    const salario = parseCurrency(salarioBase);
+    const valorATS = atsPercentual && atsAnos 
+      ? salario * (parseFloat(atsPercentual.replace(',', '.')) / 100 || 0) * (parseInt(atsAnos) || 0)
+      : 0;
+    const valorComissao = parseCurrency(comissao);
+    const valorInsalubridade = insalubridadeGrau && insalubridadeBase
+      ? parseCurrency(insalubridadeBase) * ({ minimo: 0.10, medio: 0.20, maximo: 0.40 }[insalubridadeGrau as 'minimo' | 'medio' | 'maximo'] || 0)
+      : 0;
+    const valorGratificacao = parseCurrency(gratificacao);
+    const valorPericulosidade = periculosidade 
+      ? salario * (parseFloat(periculosidade.replace(',', '.')) / 100 || 0)
+      : 0;
+    
+    const baseHE = salario + valorATS + valorComissao + valorInsalubridade + valorGratificacao + valorPericulosidade;
+    const divisor = parseInt(horasContratoMensal) || 220;
+    
+    return baseHE / divisor;
+  }, [salarioBase, atsPercentual, atsAnos, comissao, insalubridadeGrau, insalubridadeBase, gratificacao, periculosidade, horasContratoMensal]);
+
+  // Cálculos automáticos de valores
+  const adicionalNoturnoValor = useMemo(() => {
+    const horas = parseFloat(horasNoturnas.replace(',', '.')) || 0;
+    const percentual = parseFloat(percentualNoturno) / 100 || 0.20;
+    const fatorHoraReduzida = 60 / 52.5;
+    return horas * valorHoraCalculado * fatorHoraReduzida * percentual;
+  }, [horasNoturnas, percentualNoturno, valorHoraCalculado]);
+
+  const intrajornadaValor = useMemo(() => {
+    const horas = parseFloat(intrajornadaHoras.replace(',', '.')) || 0;
+    const fator = parseFloat(intrajornadaFator) || 1.5;
+    return horas * valorHoraCalculado * fator;
+  }, [intrajornadaHoras, intrajornadaFator, valorHoraCalculado]);
+
+  const interjornadaValor = useMemo(() => {
+    const horas = parseFloat(interjornadaHoras.replace(',', '.')) || 0;
+    const fator = parseFloat(interjornadaFator) || 1.5;
+    return horas * valorHoraCalculado * fator;
+  }, [interjornadaHoras, interjornadaFator, valorHoraCalculado]);
+
+  // Cálculo do DSR sobre variáveis
+  const dsrVariaveisValor = useMemo(() => {
+    const diasUteis = parseInt(dsrDiasUteis) || 0;
+    const diasNaoUteis = parseInt(dsrDiasNaoUteis) || 0;
+    
+    if (diasUteis === 0) return 0;
+    
+    // Soma das variáveis: comissão + HE + intrajornada + interjornada + adicional noturno
+    const he50 = valorHoraCalculado * 1.5 * (parseFloat(quantidadeHe50.replace(',', '.')) || 0);
+    const he100 = valorHoraCalculado * 2.0 * (parseFloat(quantidadeHe100.replace(',', '.')) || 0);
+    const heValor = he50 + he100;
+    
+    const totalVariaveis = parseCurrency(comissao) + heValor + intrajornadaValor + interjornadaValor + adicionalNoturnoValor;
+    
+    return (totalVariaveis / diasUteis) * diasNaoUteis;
+  }, [comissao, quantidadeHe50, quantidadeHe100, valorHoraCalculado, intrajornadaValor, interjornadaValor, adicionalNoturnoValor, dsrDiasUteis, dsrDiasNaoUteis]);
 
   const formatCurrency = (value: string) => {
     const numericValue = value.replace(/\D/g, '');
@@ -118,6 +216,92 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
   const handleCurrencyChange = (setter: (value: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatCurrency(e.target.value);
     setter(formatted);
+  };
+
+  // Funções para input de data híbrido
+  const handleDateTextChange = (
+    text: string, 
+    setDateText: (value: string) => void, 
+    setDate: (date: Date | undefined) => void
+  ) => {
+    // Aplicar máscara dd/mm/aaaa
+    let masked = text.replace(/\D/g, '');
+    if (masked.length > 2) masked = masked.slice(0, 2) + '/' + masked.slice(2);
+    if (masked.length > 5) masked = masked.slice(0, 5) + '/' + masked.slice(5);
+    if (masked.length > 10) masked = masked.slice(0, 10);
+    
+    setDateText(masked);
+    
+    // Tentar parsear a data
+    if (masked.length === 10) {
+      const parsed = parse(masked, 'dd/MM/yyyy', new Date());
+      if (isValid(parsed) && parsed.getFullYear() > 1900 && parsed.getFullYear() < 2100) {
+        setDate(parsed);
+      } else {
+        setDate(undefined);
+      }
+    }
+  };
+
+  const handleCalendarSelect = (
+    date: Date | undefined,
+    setDate: (date: Date | undefined) => void,
+    setDateText: (text: string) => void
+  ) => {
+    setDate(date);
+    if (date) {
+      setDateText(format(date, 'dd/MM/yyyy'));
+    } else {
+      setDateText('');
+    }
+  };
+
+  // Função para limpar todos os dados
+  const handleLimparDados = () => {
+    setSalarioBase('');
+    setDataAdmissao(undefined);
+    setDataAdmissaoText('');
+    setDataDesligamento(undefined);
+    setDataDesligamentoText('');
+    setMotivoCodigo('');
+    setTipoContrato('INDETERMINADO');
+    setTipoAviso('INDENIZADO');
+    setDiasTrabalhados('');
+    setPeriodosFeriasVencidas('0');
+    setSaldoFgts('');
+    setDependentesIrrf('0');
+    setMediaVariaveis('0');
+    setDescontoAvisoDias('0');
+    setFaltasDias('0');
+    setDsrFaltas('0');
+    setAvosFeriasEditado('');
+    setAvosFeriasJustificativa('');
+    setAvos13Editado('');
+    setAvos13Justificativa('');
+    setDiasAvisoEditado('');
+    setDiasAvisoJustificativa('');
+    setAdicionaisOpen(false);
+    setHorasNoturnas('');
+    setPercentualNoturno('20');
+    setPericulosidade('');
+    setInsalubridadeGrau('');
+    setInsalubridadeBase('');
+    setQuebraCaixaPercentual('');
+    setVrValorDia('');
+    setVrDiasUteis('');
+    setAtsPercentual('');
+    setAtsAnos('');
+    setComissao('');
+    setGratificacao('');
+    setHorasContratoMensal('220');
+    setQuantidadeHe50('');
+    setQuantidadeHe100('');
+    setIntrajornadaHoras('');
+    setIntrajornadaFator('1.5');
+    setInterjornadaHoras('');
+    setInterjornadaFator('1.5');
+    setDsrDiasUteis('22');
+    setDsrDiasNaoUteis('5');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -153,17 +337,22 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
         editado: avos13Editado ? parseInt(avos13Editado) : undefined,
         justificativa: avos13Justificativa || undefined,
       },
+      diasAvisoConfig: {
+        calculado: diasAvisoCalculado,
+        editado: diasAvisoEditado ? parseInt(diasAvisoEditado) : undefined,
+        justificativa: diasAvisoJustificativa || undefined,
+      },
       adicionais: {
-        adicionalNoturno: horasNoturnas && valorHoraNoturna ? {
+        adicionalNoturno: horasNoturnas ? {
           horasNoturnas: parseFloat(horasNoturnas.replace(',', '.')) || 0,
-          valorHora: parseCurrency(valorHoraNoturna),
+          percentual: parseFloat(percentualNoturno) / 100 || 0.20,
         } : undefined,
         periculosidade: periculosidade ? parseFloat(periculosidade.replace(',', '.')) / 100 : undefined,
         insalubridade: insalubridadeGrau && insalubridadeBase ? {
           grau: insalubridadeGrau as 'minimo' | 'medio' | 'maximo',
           base: parseCurrency(insalubridadeBase),
         } : undefined,
-        quebraCaixa: parseCurrency(quebraCaixa) || undefined,
+        quebraCaixaPercentual: quebraCaixaPercentual ? parseFloat(quebraCaixaPercentual) / 100 : undefined,
         valeRefeicao: vrValorDia && vrDiasUteis ? {
           valorDia: parseCurrency(vrValorDia),
           diasUteis: parseInt(vrDiasUteis) || 0,
@@ -179,7 +368,18 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
           quantidadeHe50: parseFloat(quantidadeHe50.replace(',', '.')) || 0,
           quantidadeHe100: parseFloat(quantidadeHe100.replace(',', '.')) || 0,
         } : undefined,
-        dsrSobreVariaveis: parseCurrency(dsrVariaveis) || undefined,
+        intrajornada: intrajornadaHoras ? {
+          horas: parseFloat(intrajornadaHoras.replace(',', '.')) || 0,
+          fator: parseFloat(intrajornadaFator) || 1.5,
+        } : undefined,
+        interjornada: interjornadaHoras ? {
+          horas: parseFloat(interjornadaHoras.replace(',', '.')) || 0,
+          fator: parseFloat(interjornadaFator) || 1.5,
+        } : undefined,
+        dsrConfig: {
+          diasUteis: parseInt(dsrDiasUteis) || 22,
+          diasNaoUteis: parseInt(dsrDiasNaoUteis) || 5,
+        },
       },
     };
 
@@ -187,17 +387,42 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
   };
 
   const showFaltasDsrWarning = parseFloat(faltasDias.replace(',', '.')) > 0 && parseCurrency(dsrFaltas) === 0;
+  const dsrDiasUteisInvalid = parseInt(dsrDiasUteis) === 0;
 
   return (
     <Card className="card-elevated">
       <CardHeader className="header-gradient text-primary-foreground rounded-t-lg">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <Calculator className="h-5 w-5" />
-          Dados da Rescisão
-        </CardTitle>
-        <CardDescription className="text-primary-foreground/80">
-          Preencha as informações do funcionário
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Calculator className="h-5 w-5" />
+              Dados da Rescisão
+            </CardTitle>
+            <CardDescription className="text-primary-foreground/80">
+              Preencha as informações do funcionário
+            </CardDescription>
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-primary-foreground hover:bg-primary-foreground/10">
+                <Trash2 className="h-4 w-4 mr-1" />
+                Limpar
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Limpar dados</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Deseja limpar todos os dados do formulário? Esta ação não pode ser desfeita.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleLimparDados}>Limpar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </CardHeader>
       <CardContent className="pt-6">
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -221,60 +446,72 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
             </Select>
           </div>
 
-          {/* Datas */}
+          {/* Datas - Input híbrido (digitação + calendário) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Data de Admissão *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !dataAdmissao && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dataAdmissao ? format(dataAdmissao, "dd/MM/yyyy", { locale: ptBR }) : "Selecione"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dataAdmissao}
-                    onSelect={setDataAdmissao}
-                    locale={ptBR}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+              <div className="flex gap-2">
+                <Input
+                  value={dataAdmissaoText}
+                  onChange={(e) => handleDateTextChange(e.target.value, setDataAdmissaoText, setDataAdmissao)}
+                  placeholder="dd/mm/aaaa"
+                  className="font-mono flex-1"
+                  maxLength={10}
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="icon" type="button">
+                      <CalendarIcon className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={dataAdmissao}
+                      onSelect={(date) => handleCalendarSelect(date, setDataAdmissao, setDataAdmissaoText)}
+                      locale={ptBR}
+                      initialFocus
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {dataAdmissaoText.length === 10 && !dataAdmissao && (
+                <p className="text-xs text-destructive">Data inválida</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label>Data de Desligamento *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !dataDesligamento && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dataDesligamento ? format(dataDesligamento, "dd/MM/yyyy", { locale: ptBR }) : "Selecione"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dataDesligamento}
-                    onSelect={setDataDesligamento}
-                    locale={ptBR}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+              <div className="flex gap-2">
+                <Input
+                  value={dataDesligamentoText}
+                  onChange={(e) => handleDateTextChange(e.target.value, setDataDesligamentoText, setDataDesligamento)}
+                  placeholder="dd/mm/aaaa"
+                  className="font-mono flex-1"
+                  maxLength={10}
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="icon" type="button">
+                      <CalendarIcon className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={dataDesligamento}
+                      onSelect={(date) => handleCalendarSelect(date, setDataDesligamento, setDataDesligamentoText)}
+                      locale={ptBR}
+                      initialFocus
+                      className="pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {dataDesligamentoText.length === 10 && !dataDesligamento && (
+                <p className="text-xs text-destructive">Data inválida</p>
+              )}
             </div>
           </div>
 
@@ -369,7 +606,17 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
           {/* Dias e Períodos */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="diasTrabalhados">Dias Trabalhados no Mês</Label>
+              <Label htmlFor="diasTrabalhados" className="flex items-center gap-1">
+                Dias Trabalhados no Mês
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Preenchido automaticamente com o dia da data de desligamento
+                  </TooltipContent>
+                </Tooltip>
+              </Label>
               <Input
                 id="diasTrabalhados"
                 type="number"
@@ -461,6 +708,59 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
               </div>
             </div>
           </div>
+
+          {/* Dias de Aviso Editável */}
+          {showAvisoOptions && tipoAviso === 'INDENIZADO' && dataAdmissao && dataDesligamento && (
+            <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
+              <h4 className="font-medium text-sm flex items-center gap-2">
+                <Info className="h-4 w-4 text-muted-foreground" />
+                Dias de Aviso Prévio
+              </h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Calculado automaticamente:</span>
+                    <span className="font-mono font-medium">{diasAvisoCalculado} dias</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    30 dias + 3 dias por ano trabalhado (máx. 90 dias)
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="diasAvisoEditado" className="text-sm">Dias editados (opcional)</Label>
+                    <Input
+                      id="diasAvisoEditado"
+                      type="number"
+                      min="0"
+                      max="90"
+                      value={diasAvisoEditado}
+                      onChange={(e) => setDiasAvisoEditado(e.target.value)}
+                      className="font-mono"
+                      placeholder={diasAvisoCalculado.toString()}
+                    />
+                  </div>
+                  {diasAvisoEditado && diasAvisoEditado !== diasAvisoCalculado.toString() && (
+                    <div className="space-y-2">
+                      <Label htmlFor="diasAvisoJustificativa" className="text-sm text-amber-600">
+                        Justificativa (obrigatória) *
+                      </Label>
+                      <Textarea
+                        id="diasAvisoJustificativa"
+                        value={diasAvisoJustificativa}
+                        onChange={(e) => setDiasAvisoJustificativa(e.target.value)}
+                        placeholder="Informe o motivo da alteração..."
+                        className="text-sm"
+                        rows={2}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Avos editáveis */}
           {dataAdmissao && dataDesligamento && (
@@ -599,7 +899,7 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
               {/* Adicional Noturno */}
               <div className="border rounded-lg p-4 space-y-3">
                 <h5 className="text-sm font-medium">Adicional Noturno (hora reduzida 52:30)</h5>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label className="text-xs">Horas Noturnas</Label>
                     <Input
@@ -612,14 +912,27 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs">Valor Hora</Label>
+                    <Label className="text-xs">Percentual</Label>
+                    <Select value={percentualNoturno} onValueChange={setPercentualNoturno}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="20">20%</SelectItem>
+                        <SelectItem value="25">25%</SelectItem>
+                        <SelectItem value="30">30%</SelectItem>
+                        <SelectItem value="50">50%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Valor (automático)</Label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
                       <Input
-                        value={valorHoraNoturna}
-                        onChange={handleCurrencyChange(setValorHoraNoturna)}
-                        className="pl-8 font-mono"
-                        placeholder="0,00"
+                        value={adicionalNoturnoValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        className="pl-8 font-mono bg-muted"
+                        readOnly
                       />
                     </div>
                   </div>
@@ -672,16 +985,34 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
               </div>
 
               {/* Quebra de Caixa */}
-              <div className="space-y-2">
-                <Label className="text-sm">Quebra de Caixa</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
-                  <Input
-                    value={quebraCaixa}
-                    onChange={handleCurrencyChange(setQuebraCaixa)}
-                    className="pl-10 font-mono"
-                    placeholder="0,00"
-                  />
+              <div className="border rounded-lg p-4 space-y-3">
+                <h5 className="text-sm font-medium">Quebra de Caixa (% do Salário Base)</h5>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Percentual</Label>
+                    <Select value={quebraCaixaPercentual} onValueChange={setQuebraCaixaPercentual}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Não possui</SelectItem>
+                        <SelectItem value="8">8%</SelectItem>
+                        <SelectItem value="10">10%</SelectItem>
+                        <SelectItem value="20">20%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Valor (automático)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
+                      <Input
+                        value={quebraCaixaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        className="pl-8 font-mono bg-muted"
+                        readOnly
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -759,7 +1090,7 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
                 </div>
               </div>
 
-              {/* Comissão e Hora Extra com DSR único */}
+              {/* Comissão e Hora Extra */}
               <div className="border rounded-lg p-4 space-y-3">
                 <h5 className="text-sm font-medium">Comissão, Hora Extra e DSR</h5>
                 <p className="text-xs text-muted-foreground">
@@ -816,18 +1147,164 @@ export function RescisaoForm({ onCalculate }: RescisaoFormProps) {
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">DSR sobre Variáveis</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">R$</span>
-                    <Input
-                      value={dsrVariaveis}
-                      onChange={handleCurrencyChange(setDsrVariaveis)}
-                      className="pl-8 font-mono"
-                      placeholder="0,00"
-                    />
+                
+                {/* Valor hora calculado */}
+                {salarioBase && (
+                  <div className="p-2 bg-muted/50 rounded text-xs">
+                    <span className="text-muted-foreground">Valor Hora Calculado: </span>
+                    <span className="font-mono font-medium">
+                      R$ {valorHoraCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Intrajornada e Interjornada */}
+              <div className="border rounded-lg p-4 space-y-3">
+                <h5 className="text-sm font-medium">Intrajornada e Interjornada (tratadas como HE)</h5>
+                <p className="text-xs text-muted-foreground">
+                  Usam a mesma Base HE e Valor Hora calculados acima
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Intrajornada */}
+                  <div className="space-y-2 border rounded p-3">
+                    <Label className="text-xs font-medium">Intrajornada</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Horas</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={intrajornadaHoras}
+                          onChange={(e) => setIntrajornadaHoras(e.target.value)}
+                          className="font-mono"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Fator</Label>
+                        <Select value={intrajornadaFator} onValueChange={setIntrajornadaFator}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1.0">× 1,0</SelectItem>
+                            <SelectItem value="1.5">× 1,5</SelectItem>
+                            <SelectItem value="2.0">× 2,0</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Valor: </span>
+                      <span className="font-mono">R$ {intrajornadaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Interjornada */}
+                  <div className="space-y-2 border rounded p-3">
+                    <Label className="text-xs font-medium">Interjornada</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Horas</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={interjornadaHoras}
+                          onChange={(e) => setInterjornadaHoras(e.target.value)}
+                          className="font-mono"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Fator</Label>
+                        <Select value={interjornadaFator} onValueChange={setInterjornadaFator}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1.0">× 1,0</SelectItem>
+                            <SelectItem value="1.5">× 1,5</SelectItem>
+                            <SelectItem value="2.0">× 2,0</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Valor: </span>
+                      <span className="font-mono">R$ {interjornadaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
                   </div>
                 </div>
+              </div>
+
+              {/* DSR sobre Variáveis - Configurável */}
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h5 className="text-sm font-medium">DSR sobre Variáveis</h5>
+                  <Dialog open={dsrDialogOpen} onOpenChange={setDsrDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm" type="button" className="h-7 px-2">
+                        <Pencil className="h-3.5 w-3.5 mr-1" />
+                        Configurar
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Configurar DSR sobre Variáveis</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label>Dias Úteis do Mês (Seg–Sáb)</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            max="31"
+                            value={dsrDiasUteis}
+                            onChange={(e) => setDsrDiasUteis(e.target.value)}
+                            className="font-mono"
+                          />
+                          {dsrDiasUteisInvalid && (
+                            <p className="text-xs text-destructive">Dias úteis não pode ser zero</p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Dias Não Úteis (Domingos + Feriados)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="31"
+                            value={dsrDiasNaoUteis}
+                            onChange={(e) => setDsrDiasNaoUteis(e.target.value)}
+                            className="font-mono"
+                          />
+                        </div>
+                        <div className="p-3 bg-muted/50 rounded">
+                          <p className="text-sm text-muted-foreground">Fórmula:</p>
+                          <p className="text-sm font-mono">
+                            DSR = (Variáveis ÷ {dsrDiasUteis || '?'}) × {dsrDiasNaoUteis || '?'}
+                          </p>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" onClick={() => setDsrDialogOpen(false)}>Confirmar</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                
+                <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                  <span className="text-xs text-muted-foreground">
+                    DSR: {dsrDiasUteis} úteis / {dsrDiasNaoUteis} não úteis
+                  </span>
+                  <span className="font-mono text-sm">
+                    R$ {(dsrDiasUteisInvalid ? 0 : dsrVariaveisValor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {dsrDiasUteisInvalid && (
+                  <p className="text-xs text-destructive">Dias úteis não pode ser zero - configure o DSR</p>
+                )}
               </div>
             </CollapsibleContent>
           </Collapsible>
